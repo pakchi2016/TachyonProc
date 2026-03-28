@@ -1,7 +1,8 @@
 ﻿<Window x:Class="cSharpEditor.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="卿の専用エディタ" Height="600" Width="800">
+        Title="卿の専用エディタ" Height="600" Width="800"
+        Closing="Window_Closing">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>

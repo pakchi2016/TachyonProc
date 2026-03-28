@@ -65,6 +65,30 @@ namespace cSharpEditor
                 }
             }
         }
+        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            // すべてのタブを順番に確認いたします
+            foreach (TabItem tab in EditorTabControl.Items)
+            {
+                if (tab.Content is TextEditor textEditor && textEditor.IsModified)
+                {
+                    var result = MessageBox.Show(
+                        "未保存のファイルがございます。保存せずに終了してもよろしいですか？",
+                        "終了の確認",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning);
+
+                    if (result == MessageBoxResult.No)
+                    {
+                        e.Cancel = true; // 終了処理をキャンセルしてエディタに戻りますわ
+                        return;
+                    }
+
+                    // 「Yes」が選ばれた場合は他の未保存タブの警告は出さず、そのまま終了させます
+                    break;
+                }
+            }
+        }
     }
 
 }

@@ -76,6 +76,8 @@ namespace cSharpEditor.ioControl
             {
                 textEditor.SyntaxHighlighting = ICSharpCode.AvalonEdit.Highlighting.HighlightingManager.Instance.GetDefinition("XML");
             }
+
+            textEditor.IsModified = false;
         }
     }
 }
