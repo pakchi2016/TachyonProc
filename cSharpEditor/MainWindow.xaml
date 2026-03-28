@@ -1,0 +1,26 @@
+﻿<Window x:Class="cSharpEditor.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="卿の専用エディタ" Height="600" Width="800">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Menu Grid.Row="0" Background="#FFF0F0F0" Padding="2">
+            <MenuItem Header="ファイル(_F)">
+                <MenuItem Header="新規タブ(_N)" Click="NewTab_Click"/>
+                <MenuItem Header="開く(_O)..." Click="OpenFile_Click"/>
+                <Separator/>
+                <MenuItem Header="保存(_S)" Click="SaveFile_Click"/>
+                <MenuItem Header="名前を付けて保存(_A)..." Click="SaveAsFile_Click"/>
+            </MenuItem>
+            <MenuItem Header="ツール(_T)">
+                <MenuItem Header="構文チェック(_C)" Click="CheckSyntax_Click"/>
+            </MenuItem>
+        </Menu>
+
+        <TabControl x:Name="EditorTabControl" Grid.Row="1" Margin="0,5,0,0"/>
+    </Grid>
+</Window>

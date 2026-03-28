@@ -1,0 +1,248 @@
+﻿App.xaml
+
+=========================================
+
+<Application x:Class="cSharpEditor.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:cSharpEditor"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+         
+    </Application.Resources>
+</Application>
+
+=========================================
+
+App.xaml.cs
+
+=========================================
+
+using System.Configuration;
+using System.Data;
+using System.Windows;
+
+namespace cSharpEditor
+{
+    /// <summary>
+    /// Interaction logic for App.xaml
+    /// </summary>
+    public partial class App : Application
+    {
+    }
+
+}
+
+=========================================
+
+AssemblyInfo.cs
+
+=========================================
+
+using System.Windows;
+
+[assembly: ThemeInfo(
+    ResourceDictionaryLocation.None,            //where theme specific resource dictionaries are located
+                                                //(used if a resource is not found in the page,
+                                                // or application resource dictionaries)
+    ResourceDictionaryLocation.SourceAssembly   //where the generic resource dictionary is located
+                                                //(used if a resource is not found in the page,
+                                                // app, or any theme specific resource dictionaries)
+)]
+
+=========================================
+
+MainWindow.xaml
+
+=========================================
+
+<Window x:Class="cSharpEditor.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="卿の専用エディタ" Height="600" Width="800">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Menu Grid.Row="0" Background="#FFF0F0F0" Padding="2">
+            <MenuItem Header="ファイル(_F)">
+                <MenuItem Header="新規タブ(_N)" Click="NewTab_Click"/>
+                <MenuItem Header="開く(_O)..." Click="OpenFile_Click"/>
+            </MenuItem>
+        </Menu>
+
+        <TabControl x:Name="EditorTabControl" Grid.Row="1" Margin="0,5,0,0"/>
+    </Grid>
+</Window>
+
+=========================================
+
+MainWindow.xaml.cs
+
+=========================================
+
+using System.IO;
+using Microsoft.Win32;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using ICSharpCode.AvalonEdit;
+using cSharpEditor.ioControl;
+using cSharpEditor.function;
+
+
+namespace cSharpEditor
+{
+    public partial class MainWindow : Window
+    {
+        private int _tabCount = 1;
+
+        public MainWindow()
+        {
+            var tabUtil = new TabUtil(EditorTabControl);
+            InitializeComponent();
+            // 起動時に空のタブを一つ用意しておきますわ
+            tabUtil.AddNewTab("無題1");
+        }
+
+        // メニューから「新規タブ」が押された際の処理
+        private void NewTab_Click(object sender, RoutedEventArgs e)
+        {
+            var tabUtil = new TabUtil(EditorTabControl);
+            _tabCount++;
+            tabUtil.AddNewTab($"無題{_tabCount}");
+        }
+
+
+        // メニューから「ファイルを開く」が押された際の処理
+        private void OpenFile_Click(object sender, RoutedEventArgs e)
+        {
+            var tabUtil = new TabUtil(EditorTabControl);
+            FileControl.OpenCode(tabUtil);
+        }
+
+
+    }
+}
+
+=========================================
+
+TabUtil.cs
+
+=========================================
+
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using ICSharpCode.AvalonEdit;
+
+namespace cSharpEditor.function
+{
+    public class TabUtil
+    {
+        private TabControl _editorTabControl;
+        public TabUtil(TabControl EditorTabControl)
+        {
+            _editorTabControl = EditorTabControl;
+        }
+        // 新しいタブとエディタを生成する処理
+        public void AddNewTab(string title)
+        {
+            // エディタコンポーネントの生成と設定
+            var textEditor = new TextEditor
+            {
+                ShowLineNumbers = true, // サクラエディタ風の要である行番号表示
+                FontFamily = new FontFamily("Consolas"), // プログラミング用等幅フォント
+                FontSize = 14,
+                // 初期状態からC#のシンタックスハイライトを適用いたします
+                SyntaxHighlighting = ICSharpCode.AvalonEdit.Highlighting.HighlightingManager.Instance.GetDefinition("C#")
+            };
+
+            // タブの生成
+            var tabItem = new TabItem
+            {
+                Header = title,
+                Content = textEditor
+            };
+
+            // 画面のタブコントロールに追加し、表示を切り替える
+            _editorTabControl.Items.Add(tabItem);
+            _editorTabControl.SelectedItem = tabItem;
+        }
+
+        // 指定された内容で新しいタブを開く処理
+        public void OpenNewFileTab(string title, string content, string filePath)
+        {
+            var textEditor = new TextEditor
+            {
+                ShowLineNumbers = true,
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 14,
+                Text = content // 読み込んだファイルの内容をセットします
+            };
+
+            // 拡張子によってシンタックスハイライトを切り替えますわ
+            string extension = Path.GetExtension(filePath).ToLower();
+            if (extension == ".cs")
+            {
+                textEditor.SyntaxHighlighting = ICSharpCode.AvalonEdit.Highlighting.HighlightingManager.Instance.GetDefinition("C#");
+            }
+            else if (extension == ".xaml" || extension == ".xml")
+            {
+                textEditor.SyntaxHighlighting = ICSharpCode.AvalonEdit.Highlighting.HighlightingManager.Instance.GetDefinition("XML");
+            }
+
+            var tabItem = new TabItem
+            {
+                Header = title,
+                Content = textEditor
+            };
+
+            _editorTabControl.Items.Add(tabItem);
+            _editorTabControl.SelectedItem = tabItem;
+        }
+    }
+}
+
+=========================================
+
+ReadFile.cs
+
+=========================================
+
+using System.IO;
+using Microsoft.Win32;
+using System.Collections.Generic;
+using System.Text;
+using cSharpEditor.function;
+
+namespace cSharpEditor.ioControl
+{
+    public class FileControl
+    {
+        public static void OpenCode(TabUtil tabUtil)
+        {
+            var dialog = new OpenFileDialog
+            {
+                Title = "ファイルを開く",
+                Filter = "C# ファイル (*.cs)|*.cs|XAML ファイル (*.xaml)|*.xaml|すべてのファイル (*.*)|*.*"
+            };
+
+            // ダイアログで「開く」が選択された場合
+            if (dialog.ShowDialog() == true)
+            {
+                string filePath = dialog.FileName;
+                string fileName = Path.GetFileName(filePath);
+                string content = File.ReadAllText(filePath);
+
+                tabUtil.OpenNewFileTab(fileName, content, filePath);
+            }
+        }
+    }
+}
+
+=========================================
+
