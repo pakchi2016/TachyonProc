@@ -74,6 +74,8 @@ namespace cSharpEditor.function
             };
 
             textEditor.TextArea.KeyDown += TextArea_KeyDown;
+            textEditor.TextArea.TextEntering += TextArea_TextEntering;
+            textEditor.TextArea.TextEntered += TextArea_TextEntered;
             EditorTabControl.Items.Add(tabItem);
             EditorTabControl.SelectedItem = tabItem;
         }

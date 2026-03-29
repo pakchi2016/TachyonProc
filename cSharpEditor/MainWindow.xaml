@@ -9,7 +9,13 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <Menu Grid.Row="0" Background="#FFF0F0F0" Padding="2">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="250"/>
+            <ColumnDefinition Width="5"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <Menu Grid.Row="0" Grid.ColumnSpan="3" Background="#FFF0F0F0" Padding="2">
             <MenuItem Header="ファイル(_F)">
                 <MenuItem Header="新規タブ(_N)" Click="NewTab_Click"/>
                 <MenuItem Header="開く(_O)..." Click="OpenFile_Click"/>
@@ -17,11 +23,39 @@
                 <MenuItem Header="保存(_S)" Click="SaveFile_Click"/>
                 <MenuItem Header="名前を付けて保存(_A)..." Click="SaveAsFile_Click"/>
             </MenuItem>
+            <MenuItem Header="ソリューションツリー">
+                <MenuItem Header="フォルダを開く(_F)..." Click="OpenFolder_Click"/>
+            </MenuItem>
             <MenuItem Header="ツール(_T)">
                 <MenuItem Header="構文チェック(_C)" Click="CheckSyntax_Click"/>
             </MenuItem>
         </Menu>
 
-        <TabControl x:Name="EditorTabControl" Grid.Row="1" Margin="0,5,0,0"/>
+        <TreeView x:Name="SolutionTreeView" Grid.Row="1" Grid.Column="0" MouseDoubleClick="SolutionTreeView_MouseDoubleClick">
+            <TreeView.ItemTemplate>
+                <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                    <TextBlock Text="{Binding Name}" Padding="2"/>
+                </HierarchicalDataTemplate>
+            </TreeView.ItemTemplate>
+        </TreeView>
+
+        <GridSplitter Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" Background="LightGray"/>
+
+        <TabControl x:Name="EditorTabControl" Grid.Row="1" Grid.Column="2" MouseDown="EditorTabControl_MouseDown">
+            <TabControl.ItemContainerStyle>
+                <Style TargetType="TabItem">
+                    <Setter Property="HeaderTemplate">
+                        <Setter.Value>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding}" VerticalAlignment="Center"/>
+                                    <Button Content="×" Margin="5,0,0,0" Padding="2,0" Background="Transparent" BorderThickness="0" Cursor="Hand" Click="CloseTabButton_Click" Tag="{Binding RelativeSource={RelativeSource AncestorType=TabItem}}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </TabControl.ItemContainerStyle>
+        </TabControl>
     </Grid>
 </Window>

@@ -1,15 +1,26 @@
-﻿using System.IO;
+using cSharpEditor.function;
+using cSharpEditor.ioControl;
+using ICSharpCode.AvalonEdit;
 using Microsoft.Win32;
 using System.Windows;
+using System.IO;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
-using ICSharpCode.AvalonEdit;
-using cSharpEditor.ioControl;
-using cSharpEditor.function;
-
 
 namespace cSharpEditor
 {
+    // ツリーに表示する要素のデータクラスですわ
+    public class TreeItem
+    {
+        public string Name { get; set; }
+        public string FullPath { get; set; }
+        public bool IsFile { get; set; }
+
+        // フォルダの場合は、この中に子要素が入ります
+        public System.Collections.ObjectModel.ObservableCollection<TreeItem> Children { get; set; } = new();
+    }
+
     public partial class MainWindow : Window
     {
         private int _tabCount = 1;
@@ -65,6 +76,54 @@ namespace cSharpEditor
                 }
             }
         }
+
+        private void CloseTabButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is TabItem tabItem)
+            {
+                CloseSpecifiedTab(tabItem);
+            }
+        }
+
+        private void EditorTabControl_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton == MouseButton.Middle && e.OriginalSource is DependencyObject obj)
+            {
+                // クリックされた位置にある TabItem を特定します
+                var tabItem = FindAncestor<TabItem>(obj);
+                if (tabItem != null)
+                {
+                    CloseSpecifiedTab(tabItem);
+                }
+            }
+        }
+
+        private void CloseSpecifiedTab(TabItem tabItem)
+        {
+            if (tabItem.Content is ICSharpCode.AvalonEdit.TextEditor textEditor && textEditor.IsModified)
+            {
+                var result = MessageBox.Show(
+                    $"{tabItem.Header} は変更されています。保存せずに閉じますか？",
+                    "確認",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+                if (result == MessageBoxResult.No) return;
+            }
+
+            EditorTabControl.Items.Remove(tabItem);
+        }
+
+        // 親要素を辿るためのヘルパーメソッドですわ
+        private static T FindAncestor<T>(DependencyObject current) where T : DependencyObject
+        {
+            do
+            {
+                if (current is T ancestor) return ancestor;
+                current = VisualTreeHelper.GetParent(current);
+            } while (current != null);
+            return null;
+        }
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             // すべてのタブを順番に確認いたします
@@ -87,6 +146,34 @@ namespace cSharpEditor
                     // 「Yes」が選ばれた場合は他の未保存タブの警告は出さず、そのまま終了させます
                     break;
                 }
+            }
+        }
+
+        private void OpenFolder_Click(object sender, RoutedEventArgs e)
+        { 
+            SolutionTree.OpenFolder(SolutionTreeView);
+        }
+
+        private void SolutionTreeView_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (SolutionTreeView.SelectedItem is TreeItem selectedItem && selectedItem.IsFile)
+            {
+                // 既に同じファイルが開かれていないかチェックし、開かれていればそのタブをアクティブにしますわ
+                foreach (TabItem tab in EditorTabControl.Items)
+                {
+                    // ※実際にはTabItemのTagプロパティなどにパスを保存して比較するのが正確ですが、
+                    // 今回は簡易的に「タイトルの一部」で判定する例です
+                    if (tab.Header.ToString().Contains(selectedItem.Name))
+                    {
+                        EditorTabControl.SelectedItem = tab;
+                        return;
+                    }
+                }
+
+                // 選択されたファイルを読み込み、新しいタブとして開きます
+                string content = System.IO.File.ReadAllText(selectedItem.FullPath);
+                // ※ TabUtil は卿の現在の実装に合わせて呼び出してくださいませ
+                TabUtil.OpenNewFileTab(selectedItem.Name, content, selectedItem.FullPath, EditorTabControl);
             }
         }
     }
