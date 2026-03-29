@@ -7,15 +7,16 @@ using System.IO;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using cSharpEditor.ObjectWindow;
 
 namespace cSharpEditor
 {
     // ツリーに表示する要素のデータクラスですわ
     public class TreeItem
     {
-        public string Name { get; set; }
-        public string FullPath { get; set; }
-        public bool IsFile { get; set; }
+        public string Name { get; set; } = "";
+        public string FullPath { get; set; } = "";
+        public bool IsFile { get; set; } = false;
 
         // フォルダの場合は、この中に子要素が入ります
         public System.Collections.ObjectModel.ObservableCollection<TreeItem> Children { get; set; } = new();
@@ -24,7 +25,7 @@ namespace cSharpEditor
     public partial class MainWindow : Window
     {
         private int _tabCount = 1;
-        private TabUtil _tabUtil;
+        private readonly TabUtil? _tabUtil;
 
         public MainWindow()
         {
@@ -175,6 +176,40 @@ namespace cSharpEditor
                 // ※ TabUtil は卿の現在の実装に合わせて呼び出してくださいませ
                 TabUtil.OpenNewFileTab(selectedItem.Name, content, selectedItem.FullPath, EditorTabControl);
             }
+        }
+        private void SolutionButton_Click(object sender, RoutedEventArgs e)
+        {
+            var createControl = new Create(ResultTextBlock);
+            createControl.CreateSolution();
+
+            Window hostWindow = TerminalWindow("ソリューション作成", createControl);
+
+            hostWindow.ShowDialog();
+        }
+        private void ProjectButton_Click(object sender, RoutedEventArgs e)
+        {
+            var createControl = new Create(ResultTextBlock);
+            createControl.CreateSolution();
+
+            Window hostWindow = TerminalWindow("プロジェクト作成", createControl);
+
+            hostWindow.ShowDialog();
+        }
+        private void BuildButton_Click(object sender, RoutedEventArgs e)
+        {
+            Build.Create(ResultTextBlock);
+        }
+
+        private Window TerminalWindow(string title, Create control)
+        {
+            return new Window
+            {
+                Title = title,
+                Content = control, // ← ここで部品をはめ込みます
+                SizeToContent = SizeToContent.WidthAndHeight, // 中身に合わせて自動でサイズ調整させます
+                ResizeMode = ResizeMode.NoResize,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen
+            };
         }
     }
 

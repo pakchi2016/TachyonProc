@@ -1,0 +1,33 @@
+﻿<UserControl x:Class="cSharpEditor.ObjectWindow.Create"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:cSharpEditor.ObjectWindow"
+             mc:Ignorable="d" 
+             d:DesignHeight="200" d:DesignWidth="600">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="10">
+            <TextBlock x:Name="CreateObjectBlock" Text="作成するオブジェクト" VerticalAlignment="Center" Margin="0,0,5,0" Foreground="Black" />
+        </StackPanel>
+        <StackPanel Grid.Row="1"  Orientation="Horizontal" Margin="10">
+            <TextBlock x:Name="CreateObjectBox" Text="作成オブジェクト名:" VerticalAlignment="Center" Margin="0,0,5,0" Foreground="Black" />
+            <TextBox x:Name="CreateObjectText" Width="200" Margin="0,0,5,0"/>
+        </StackPanel>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="10">
+            <TextBlock Text="作成フォルダ:" VerticalAlignment="Center" Margin="0,0,5,0" Foreground="Black" />
+            <TextBox x:Name="SavePathBox" Width="400" Margin="0,0,5,0"/>
+            <Button Content="参照" Width="80" Click="BrowseButton_Click"/>
+        </StackPanel>
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="10">
+            <Button Content="作成" Width="80" Margin="5" Click="CreateButton_Click"/>
+            <Button Content="キャンセル" Width="80" Margin="5" Click="CancelButton_Click"/>
+        </StackPanel>
+    </Grid>
+</UserControl>
