@@ -1,3 +1,4 @@
 <Solution>
   <Project Path="cSharpEditor/cSharpEditor.csproj" />
+  <Project Path="PowerTerminal/PowerTerminal.csproj" Id="b0749ba9-e843-4292-b64f-b12d326ea3de" />
 </Solution>

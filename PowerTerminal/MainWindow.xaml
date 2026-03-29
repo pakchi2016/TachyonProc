@@ -1,0 +1,32 @@
+﻿<Window x:Class="PowerTerminal.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="PowerShell Commander" Height="450" Width="800">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0" Margin="0,0,0,10" Background="#1E1E1E">
+            <TextBlock Name="OutputTextBlock" Foreground="LightGray" FontFamily="Consolas" Padding="5" TextWrapping="Wrap" />
+        </ScrollViewer>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBox Name="InputTextBox" Grid.Column="0" Margin="0,0,10,0" Padding="5" FontFamily="Consolas" FontSize="14" 
+             TextChanged="InputTextBox_TextChanged" 
+             PreviewKeyDown="InputTextBox_PreviewKeyDown" />
+            <Popup Name="CompletionPopup" PlacementTarget="{Binding ElementName=InputTextBox}" Placement="Bottom" StaysOpen="False">
+                <ListBox Name="CompletionListBox" MaxHeight="150" FontFamily="Consolas" FontSize="14"
+                 PreviewKeyDown="CompletionListBox_PreviewKeyDown"
+                 MouseDoubleClick="CompletionListBox_MouseDoubleClick"/>
+            </Popup>
+            <Button Name="ExecuteButton" Grid.Column="1" Content="実行" Width="80" Click="ExecuteButton_Click" />
+        </Grid>
+    </Grid>
+</Window>
