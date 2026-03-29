@@ -4,7 +4,10 @@
     <_LastSelectedProfileId>D:\dev\projects\TachyonProc\cSharpEditor\Properties\PublishProfiles\FolderProfile.pubxml</_LastSelectedProfileId>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Update="Window\Create.xaml.cs">
+    <Compile Update="Window\Projects.xaml.cs">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Update="Window\Solution.xaml.cs">
       <SubType>Code</SubType>
     </Compile>
   </ItemGroup>

@@ -14,8 +14,10 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 
-namespace cSharpEditor.ObjectWindow
+namespace cSharpEditor.Solution
 {
+
+
     /// <summary>
     /// Create.xaml の相互作用ロジック
     /// </summary>
@@ -46,6 +48,9 @@ namespace cSharpEditor.ObjectWindow
             if (!Directory.Exists(fullPath)) Directory.CreateDirectory(fullPath);
             string solutionPath = Path.Combine(fullPath, solutionName);
             if (!Directory.Exists(solutionPath)) Directory.CreateDirectory(solutionPath);
+
+            StreamWriter sw = new StreamWriter("solutionList", false, Encoding.UTF8);
+
 
             string command = $"dotnet new sln -o {solutionPath}";
 
