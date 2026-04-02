@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="cGIT/cGIT.csproj" Id="e6338611-9200-4e8c-9e3b-819db47ab834" />
   <Project Path="cSharpEditor/cSharpEditor.csproj" />
   <Project Path="getCshCode/getCshCode.csproj" Id="0843e2c4-0aff-43a0-9c88-e83bceb0bb70" />
   <Project Path="PowerTerminal/PowerTerminal.csproj" Id="b0749ba9-e843-4292-b64f-b12d326ea3de" />
