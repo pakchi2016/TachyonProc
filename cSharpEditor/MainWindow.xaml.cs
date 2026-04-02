@@ -8,6 +8,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using cSharpEditor.Solution;
+using System.Reflection;
+using System.Linq;
 
 namespace cSharpEditor
 {
@@ -32,6 +34,7 @@ namespace cSharpEditor
             InitializeComponent();
             // 起動時に空のタブを一つ用意しておきますわ
             TabUtil.AddNewTab("無題1",EditorTabControl);
+
         }
 
         // メニューから「新規タブ」が押された際の処理
@@ -78,6 +81,18 @@ namespace cSharpEditor
             }
         }
 
+        private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            // CtrlキーとSキーが同時に押されたかを判定します
+            if (e.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                // すでに実装済みの保存処理を呼び出しますわ
+                SaveFile_Click(null, null);
+
+                // イベントが処理されたことをシステムに伝え、他の動作を止めます
+                e.Handled = true;
+            }
+        }
         private void CloseTabButton_Click(object sender, RoutedEventArgs e)
         {
             if (sender is Button button && button.Tag is TabItem tabItem)

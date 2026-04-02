@@ -7,12 +7,28 @@ using System.Linq;
 using System.Windows.Input;
 using ICSharpCode.AvalonEdit.CodeCompletion;
 using ICSharpCode.AvalonEdit.Editing;
+using System.Reflection;
 
 namespace cSharpEditor.function
 {
     public class TabUtil
     {
         private static CompletionWindow _completionWindow;
+        private static List<string> _xamlTagsCache = new List<string>();
+
+        // エディタ起動時（MainWindowのコンストラクタ等）で一度だけ呼び出してくださいませ
+        public static void InitializeXamlIntellisense()
+        {
+            if (_xamlTagsCache.Count > 0) return; // 既に取得済みならスキップします
+
+            var wpfAssembly = typeof(System.Windows.FrameworkElement).Assembly;
+
+            _xamlTagsCache = wpfAssembly.GetTypes()
+                .Where(t => t.IsPublic && !t.IsAbstract && typeof(System.Windows.FrameworkElement).IsAssignableFrom(t))
+                .Select(t => t.Name)
+                .OrderBy(name => name)
+                .ToList();
+        }
 
         // 新しいタブとエディタを生成する処理
         public static void AddNewTab(string title,TabControl EditorTabControl)
@@ -92,51 +108,124 @@ namespace cSharpEditor.function
         }
 
         // キー入力された直後の処理（「.」や「using 」を検知してRoslynを呼び出します）
+        // キー入力された直後の処理
+        // キー入力された直後の処理
         private static void TextArea_TextEntered(object sender, TextCompositionEventArgs e)
         {
             if (sender is not TextArea textArea) return;
 
-            bool shouldTrigger = false;
             int offset = textArea.Caret.Offset;
+            var document = textArea.Document;
 
-            // ① ドットが入力された場合は無条件でトリガーとします
-            if (e.Text == ".")
+            // ※ タブのTagなどから現在のファイルがXAMLかどうかを判定するフラグです
+            // 卿の環境に合わせて、適切に拡張子判定を行うよう書き換えてくださいませ
+            bool isXamlFile = true;
+
+            // ＝＝＝ XAMLファイル用の処理 ＝＝＝
+            if (isXamlFile)
             {
-                shouldTrigger = true;
-            }
-            // ② スペースが入力された場合は、直前の単語を確認します
-            else if (e.Text == " ")
-            {
-                if (offset >= 6)
+                // ① タグの補完（「<」が入力された場合）
+                if (e.Text == "<")
                 {
-                    string prevText = textArea.Document.GetText(offset - 6, 6);
-                    if (prevText == "using ") // 直前が「using 」ならトリガーとしますわ
+                    if (_xamlTagsCache.Count == 0) InitializeXamlIntellisense();
+
+                    if (_xamlTagsCache.Count > 0)
                     {
-                        shouldTrigger = true;
+                        _completionWindow = new CompletionWindow(textArea);
+                        var data = _completionWindow.CompletionList.CompletionData;
+                        foreach (var tagName in _xamlTagsCache)
+                        {
+                            data.Add(new MyCompletionData(tagName));
+                        }
+                        _completionWindow.Show();
+                        _completionWindow.Closed += delegate { _completionWindow = null; };
                     }
+                    return;
+                }
+                // ② プロパティの補完（「.」が入力された場合：例 Grid. など）
+                else if (e.Text == ".")
+                {
+                    // ドットの直前にある単語（クラス名）を抽出いたします
+                    int startOffset = offset - 2; // ドットの前の文字から逆引きします
+                    while (startOffset >= 0 && char.IsLetterOrDigit(document.GetCharAt(startOffset)))
+                    {
+                        startOffset--;
+                    }
+                    startOffset++;
+
+                    string className = document.GetText(startOffset, offset - 1 - startOffset);
+
+                    if (!string.IsNullOrEmpty(className))
+                    {
+                        var wpfAssembly = typeof(System.Windows.FrameworkElement).Assembly;
+                        // 抽出した単語と一致するWPFのクラスを探し出します
+                        var targetType = wpfAssembly.GetTypes().FirstOrDefault(t => t.Name == className);
+
+                        if (targetType != null)
+                        {
+                            _completionWindow = new CompletionWindow(textArea);
+                            var data = _completionWindow.CompletionList.CompletionData;
+
+                            // そのクラスが持つ公開プロパティ（添付プロパティ含む）を抽出いたします
+                            var properties = targetType.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
+                                                       .Select(p => p.Name)
+                                                       .Distinct()
+                                                       .OrderBy(n => n);
+
+                            foreach (var prop in properties)
+                            {
+                                data.Add(new MyCompletionData(prop));
+                            }
+
+                            if (data.Count > 0)
+                            {
+                                _completionWindow.Show();
+                                _completionWindow.Closed += delegate { _completionWindow = null; };
+                            }
+                        }
+                    }
+                    return;
                 }
             }
-
-            // トリガー条件を満たした場合のみ、解析とポップアップ表示を行います
-            if (shouldTrigger)
+            // ＝＝＝ C#ファイル用の処理（既存のRoslyn呼び出し） ＝＝＝
+            else
             {
-                string code = textArea.Document.Text;
+                bool shouldTriggerCSharp = false;
 
-                // Roslynの解析処理を呼び出します
-                var completions = RoslynUtil.GetCompletions(code, offset);
-
-                if (completions.Any())
+                if (e.Text == ".")
                 {
-                    _completionWindow = new CompletionWindow(textArea);
-                    var data = _completionWindow.CompletionList.CompletionData;
-
-                    foreach (var c in completions)
+                    shouldTriggerCSharp = true;
+                }
+                else if (e.Text == " ")
+                {
+                    if (offset >= 6)
                     {
-                        data.Add(new MyCompletionData(c));
+                        string prevText = document.GetText(offset - 6, 6);
+                        if (prevText == "using ")
+                        {
+                            shouldTriggerCSharp = true;
+                        }
                     }
+                }
 
-                    _completionWindow.Show();
-                    _completionWindow.Closed += delegate { _completionWindow = null; };
+                if (shouldTriggerCSharp)
+                {
+                    string code = document.Text;
+                    var completions = RoslynUtil.GetCompletions(code, offset);
+
+                    if (completions.Any())
+                    {
+                        _completionWindow = new CompletionWindow(textArea);
+                        var data = _completionWindow.CompletionList.CompletionData;
+
+                        foreach (var c in completions)
+                        {
+                            data.Add(new MyCompletionData(c));
+                        }
+
+                        _completionWindow.Show();
+                        _completionWindow.Closed += delegate { _completionWindow = null; };
+                    }
                 }
             }
         }

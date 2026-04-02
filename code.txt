@@ -1,0 +1,1852 @@
+﻿ソリューション名: TachyonProc
+プロジェクト名: cSharpEditor 
+App.xaml
+===========================
+<Application x:Class="cSharpEditor.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:cSharpEditor"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+         
+    </Application.Resources>
+</Application>
+===========================
+App.xaml.cs
+===========================
+using System.Configuration;
+using System.Data;
+using System.Windows;
+
+namespace cSharpEditor
+{
+    /// <summary>
+    /// Interaction logic for App.xaml
+    /// </summary>
+    public partial class App : Application
+    {
+    }
+
+}
+===========================
+AssemblyInfo.cs
+===========================
+using System.Windows;
+
+[assembly: ThemeInfo(
+    ResourceDictionaryLocation.None,            //where theme specific resource dictionaries are located
+                                                //(used if a resource is not found in the page,
+                                                // or application resource dictionaries)
+    ResourceDictionaryLocation.SourceAssembly   //where the generic resource dictionary is located
+                                                //(used if a resource is not found in the page,
+                                                // app, or any theme specific resource dictionaries)
+)]
+===========================
+MainWindow.xaml
+===========================
+<Window x:Class="cSharpEditor.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="卿の専用エディタ" Height="800" Width="1000"
+        Closing="Window_Closing">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="20"/>
+            <RowDefinition Height="250"/>
+        </Grid.RowDefinitions>
+
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="80"/>
+            <ColumnDefinition Width="80"/>
+            <ColumnDefinition Width="80"/>
+            <ColumnDefinition Width="5"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <Menu Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="6" Background="#FFF0F0F0" Padding="2">
+            <MenuItem Header="ファイル(_F)">
+                <MenuItem Header="新規タブ(_N)" Click="NewTab_Click"/>
+                <MenuItem Header="開く(_O)..." Click="OpenFile_Click"/>
+                <Separator/>
+                <MenuItem Header="保存(_S)" Click="SaveFile_Click"/>
+                <MenuItem Header="名前を付けて保存(_A)..." Click="SaveAsFile_Click"/>
+            </MenuItem>
+            <MenuItem Header="ソリューションツリー">
+                <MenuItem Header="フォルダを開く(_F)..." Click="OpenFolder_Click"/>
+            </MenuItem>
+            <MenuItem Header="ツール(_T)">
+                <MenuItem Header="構文チェック(_C)" Click="CheckSyntax_Click"/>
+            </MenuItem>
+        </Menu>
+
+        <TreeView x:Name="SolutionTreeView" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" MouseDoubleClick="SolutionTreeView_MouseDoubleClick">
+            <TreeView.ItemTemplate>
+                <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                    <TextBlock Text="{Binding Name}" Padding="2"/>
+                </HierarchicalDataTemplate>
+            </TreeView.ItemTemplate>
+        </TreeView>
+
+        <GridSplitter Grid.Row="1" Grid.Column="3" HorizontalAlignment="Stretch" Background="LightGray"/>
+
+        <TabControl x:Name="EditorTabControl" Grid.Row="1" Grid.Column="4" Grid.ColumnSpan="2" MouseDown="EditorTabControl_MouseDown">
+            <TabControl.ItemContainerStyle>
+                <Style TargetType="TabItem">
+                    <Setter Property="HeaderTemplate">
+                        <Setter.Value>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding}" VerticalAlignment="Center"/>
+                                    <Button Content="×" Margin="5,0,0,0" Padding="2,0" Background="Transparent" BorderThickness="0" Cursor="Hand" Click="CloseTabButton_Click" Tag="{Binding RelativeSource={RelativeSource AncestorType=TabItem}}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </TabControl.ItemContainerStyle>
+        </TabControl>
+        <Border Grid.Row="2" Grid.Column="0" Background="LightGray">
+            <Button Content="ソリューション作成" Margin="5,0,0,0" Padding="2,0" Background="Transparent" BorderThickness="0" Cursor="Hand" Click="SolutionButton_Click"/>
+        </Border>
+        <Border Grid.Row="2" Grid.Column="1" Background="LightGray">
+            <Button Content="プロジェクト作成" Margin="5,0,0,0" Padding="2,0" Background="Transparent" BorderThickness="0" Cursor="Hand" Click="ProjectButton_Click"/>
+        </Border>
+        <Border Grid.Row="2" Grid.Column="2" Background="LightGray">
+            <Button Content="ビルド" Margin="5,0,0,0" Padding="2,0" Background="Transparent" BorderThickness="0" Cursor="Hand" Click="BuildButton_Click"/>
+        </Border>
+        <ScrollViewer Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="6">  
+            <TextBlock x:Name="ResultTextBlock" HorizontalAlignment="Left" VerticalAlignment="Center" Foreground="Gray"/>
+        </ScrollViewer>
+    </Grid>
+</Window>
+===========================
+MainWindow.xaml.cs
+===========================
+using cSharpEditor.function;
+using cSharpEditor.ioControl;
+using ICSharpCode.AvalonEdit;
+using Microsoft.Win32;
+using System.Windows;
+using System.IO;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using cSharpEditor.Solution;
+
+namespace cSharpEditor
+{
+    // ツリーに表示する要素のデータクラスですわ
+    public class TreeItem
+    {
+        public string Name { get; set; } = "";
+        public string FullPath { get; set; } = "";
+        public bool IsFile { get; set; } = false;
+
+        // フォルダの場合は、この中に子要素が入ります
+        public System.Collections.ObjectModel.ObservableCollection<TreeItem> Children { get; set; } = new();
+    }
+
+    public partial class MainWindow : Window
+    {
+        private int _tabCount = 1;
+        private readonly TabUtil? _tabUtil;
+
+        public MainWindow()
+        {
+            InitializeComponent();
+            // 起動時に空のタブを一つ用意しておきますわ
+            TabUtil.AddNewTab("無題1",EditorTabControl);
+        }
+
+        // メニューから「新規タブ」が押された際の処理
+        private void NewTab_Click(object sender, RoutedEventArgs e)
+        {
+            _tabCount++;
+            TabUtil.AddNewTab($"無題{_tabCount}",EditorTabControl);
+        }
+
+
+        // メニューから「ファイルを開く」が押された際の処理
+        private void OpenFile_Click(object sender, RoutedEventArgs e)
+        {
+            FileControl.OpenCode(EditorTabControl);
+        }
+        private void SaveFile_Click(object sender, RoutedEventArgs e)
+        {
+            FileControl.SaveCode(EditorTabControl, isSaveAs: false);
+        }
+
+        private void SaveAsFile_Click(object sender, RoutedEventArgs e)
+        {
+            FileControl.SaveCode(EditorTabControl, isSaveAs: true);
+        }
+        private void CheckSyntax_Click(object sender, RoutedEventArgs e)
+        {
+            if (EditorTabControl.SelectedItem is TabItem selectedTab &&
+                selectedTab.Content is TextEditor textEditor)
+            {
+                string currentCode = textEditor.Text;
+                var errors = RoslynUtil.GetAllSyntaxErrors(currentCode).ToList();
+
+                if (errors.Any())
+                {
+                    // エラーが見つかった場合は一覧を表示します
+                    string message = string.Join("\n", errors);
+                    MessageBox.Show(message, "構文エラー検知", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                else
+                {
+                    // 何もなければ卿の美しきコーディングを称えますわ
+                    MessageBox.Show("構文エラーは見当たりませんわ。美しいコードですこと。", "チェック完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+        }
+
+        private void CloseTabButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is TabItem tabItem)
+            {
+                CloseSpecifiedTab(tabItem);
+            }
+        }
+
+        private void EditorTabControl_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton == MouseButton.Middle && e.OriginalSource is DependencyObject obj)
+            {
+                // クリックされた位置にある TabItem を特定します
+                var tabItem = FindAncestor<TabItem>(obj);
+                if (tabItem != null)
+                {
+                    CloseSpecifiedTab(tabItem);
+                }
+            }
+        }
+
+        private void CloseSpecifiedTab(TabItem tabItem)
+        {
+            if (tabItem.Content is ICSharpCode.AvalonEdit.TextEditor textEditor && textEditor.IsModified)
+            {
+                var result = MessageBox.Show(
+                    $"{tabItem.Header} は変更されています。保存せずに閉じますか？",
+                    "確認",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+                if (result == MessageBoxResult.No) return;
+            }
+
+            EditorTabControl.Items.Remove(tabItem);
+        }
+
+        // 親要素を辿るためのヘルパーメソッドですわ
+        private static T FindAncestor<T>(DependencyObject current) where T : DependencyObject
+        {
+            do
+            {
+                if (current is T ancestor) return ancestor;
+                current = VisualTreeHelper.GetParent(current);
+            } while (current != null);
+            return null;
+        }
+        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            // すべてのタブを順番に確認いたします
+            foreach (TabItem tab in EditorTabControl.Items)
+            {
+                if (tab.Content is TextEditor textEditor && textEditor.IsModified)
+                {
+                    var result = MessageBox.Show(
+                        "未保存のファイルがございます。保存せずに終了してもよろしいですか？",
+                        "終了の確認",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning);
+
+                    if (result == MessageBoxResult.No)
+                    {
+                        e.Cancel = true; // 終了処理をキャンセルしてエディタに戻りますわ
+                        return;
+                    }
+
+                    // 「Yes」が選ばれた場合は他の未保存タブの警告は出さず、そのまま終了させます
+                    break;
+                }
+            }
+        }
+
+        private void OpenFolder_Click(object sender, RoutedEventArgs e)
+        { 
+            SolutionTree.OpenFolder(SolutionTreeView);
+        }
+
+        private void SolutionTreeView_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (SolutionTreeView.SelectedItem is TreeItem selectedItem && selectedItem.IsFile)
+            {
+                // 既に同じファイルが開かれていないかチェックし、開かれていればそのタブをアクティブにしますわ
+                foreach (TabItem tab in EditorTabControl.Items)
+                {
+                    // ※実際にはTabItemのTagプロパティなどにパスを保存して比較するのが正確ですが、
+                    // 今回は簡易的に「タイトルの一部」で判定する例です
+                    if (tab.Header.ToString().Contains(selectedItem.Name))
+                    {
+                        EditorTabControl.SelectedItem = tab;
+                        return;
+                    }
+                }
+
+                // 選択されたファイルを読み込み、新しいタブとして開きます
+                string content = System.IO.File.ReadAllText(selectedItem.FullPath);
+                // ※ TabUtil は卿の現在の実装に合わせて呼び出してくださいませ
+                TabUtil.OpenNewFileTab(selectedItem.Name, content, selectedItem.FullPath, EditorTabControl);
+            }
+        }
+        private void SolutionButton_Click(object sender, RoutedEventArgs e)
+        {
+            var createControl = new Create(ResultTextBlock);
+            createControl.CreateSolution();
+
+            Window hostWindow = TerminalWindow("ソリューション作成", createControl);
+
+            hostWindow.ShowDialog();
+        }
+        private void ProjectButton_Click(object sender, RoutedEventArgs e)
+        {
+            var createControl = new Create(ResultTextBlock);
+            createControl.CreateSolution();
+
+            Window hostWindow = TerminalWindow("プロジェクト作成", createControl);
+
+            hostWindow.ShowDialog();
+        }
+        private void BuildButton_Click(object sender, RoutedEventArgs e)
+        {
+            Build.Create(ResultTextBlock);
+        }
+
+        private Window TerminalWindow(string title, Create control)
+        {
+            return new Window
+            {
+                Title = title,
+                Content = control, // ← ここで部品をはめ込みます
+                SizeToContent = SizeToContent.WidthAndHeight, // 中身に合わせて自動でサイズ調整させます
+                ResizeMode = ResizeMode.NoResize,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen
+            };
+        }
+    }
+
+}
+===========================
+MyCompletionData.cs
+===========================
+using System;
+using System.Windows.Media;
+using ICSharpCode.AvalonEdit.CodeCompletion;
+using ICSharpCode.AvalonEdit.Document;
+using ICSharpCode.AvalonEdit.Editing;
+
+namespace cSharpEditor.function
+{
+    // AvalonEditの補完ウィンドウに表示するアイテムの定義ですわ
+    public class MyCompletionData : ICompletionData
+    {
+        public MyCompletionData(string text)
+        {
+            Text = text;
+        }
+
+        public ImageSource Image => null; // アイコン画像は一旦なしとします
+        public string Text { get; }
+        public object Content => Text; // リストに表示される文字列
+        public object Description => "Roslynによる解析候補ですわ";
+        public double Priority => 0;
+
+        // ユーザーがEnterキー等で候補を確定させた際の挿入処理です
+        public void Complete(TextArea textArea, ISegment completionSegment, EventArgs insertionRequestEventArgs)
+        {
+            textArea.Document.Replace(completionSegment, Text);
+        }
+    }
+}
+===========================
+RoslynUtil.cs
+===========================
+using System;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System.Collections.Generic;
+using System.Linq;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Recommendations;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+
+namespace cSharpEditor.function
+{
+    public static class RoslynUtil
+    {
+        public static IEnumerable<string> GetCompletions(string code, int position)
+        {
+            var workspace = new AdhocWorkspace();
+
+            var parseOptions = new CSharpParseOptions(LanguageVersion.Latest);
+            var compilationOptions = new CSharpCompilationOptions(OutputKind.ConsoleApplication);
+
+            // エディタ自身が現在読み込んでいる安全なアセンブリ（DLL）をすべて取得しますわ
+            var references = AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => !a.IsDynamic && !string.IsNullOrWhiteSpace(a.Location))
+                .Select(a => MetadataReference.CreateFromFile(a.Location));
+
+            // 1. SolutionからProjectを追加し、取得した参照リストを一括で追加(AddMetadataReferences)いたします
+            var project = workspace.CurrentSolution
+                .AddProject("TempProject", "TempProject", LanguageNames.CSharp)
+                .WithCompilationOptions(compilationOptions)
+                .WithParseOptions(parseOptions)
+                .AddMetadataReferences(references); // ← ここが変更点ですのよ
+
+            // 2. その Project に対して、入力されたコードを Document として追加いたします
+            var document = project.AddDocument("TempFile.cs", code);
+
+            // 3. Document が属する最新の Solution 状態を Workspace に適用させます
+            workspace.TryApplyChanges(document.Project.Solution);
+
+            // 4. 反映済みの Workspace から再度 Document を取得し、SemanticModel を取り出します
+            var appliedDocument = workspace.CurrentSolution.GetDocument(document.Id);
+            var semanticModel = appliedDocument.GetSemanticModelAsync().Result;
+
+            // 5. Workspaceに正しく紐づいた SemanticModel を渡します
+            var symbols = Recommender.GetRecommendedSymbolsAtPositionAsync(
+                semanticModel,
+                position,
+                workspace).Result;
+
+            return symbols.Select(s => s.Name).Distinct().OrderBy(n => n);
+        }
+        public static IEnumerable<string> GetMissingUsings(string code, int position)
+        {
+            var tree = CSharpSyntaxTree.ParseText(code);
+            var root = tree.GetRoot();
+
+            // 1. カーソル位置の直前にある単語（トークン）を取得します
+            var token = root.FindToken(position - 1);
+            string targetName = token.ValueText;
+
+            if (string.IsNullOrWhiteSpace(targetName))
+                return Enumerable.Empty<string>();
+
+            // 2. 既に記述されているusingを抽出し、二重提案を防ぎます
+            var existingUsings = root.DescendantNodes()
+                .OfType<UsingDirectiveSyntax>()
+                .Select(u => u.Name.ToString())
+                .ToHashSet();
+
+            var suggestedNamespaces = new HashSet<string>();
+
+            // 3. 現在読み込まれている全てのアセンブリ(DLL)を走査しますわ
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic))
+            {
+                try
+                {
+                    foreach (var type in assembly.GetExportedTypes())
+                    {
+                        // ① クラス名としての完全一致（ジェネリック含む）
+                        if (type.Name == targetName || type.Name.StartsWith(targetName + "`"))
+                        {
+                            if (!string.IsNullOrEmpty(type.Namespace) && !existingUsings.Contains(type.Namespace))
+                            {
+                                suggestedNamespaces.Add(type.Namespace);
+                            }
+                        }
+
+                        // ② 拡張メソッドとしての検索
+                        // C#の静的クラスは内部的に abstract かつ sealed として扱われます
+                        if (type.IsAbstract && type.IsSealed)
+                        {
+                            // 対象の文字列と同じ名前を持つ public static メソッドを探します
+                            var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Static);
+                            foreach (var method in methods)
+                            {
+                                // そのメソッドが「拡張メソッド」であるか（ExtensionAttributeを持つか）を判定しますわ
+                                if (method.Name == targetName && method.IsDefined(typeof(ExtensionAttribute), false))
+                                {
+                                    if (!string.IsNullOrEmpty(type.Namespace) && !existingUsings.Contains(type.Namespace))
+                                    {
+                                        suggestedNamespaces.Add(type.Namespace);
+                                    }
+                                    break; // 同じクラス内で1つ見つかれば十分ですのでループを抜けます
+                                }
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // セキュリティ等で読み込めないアセンブリは華麗にスルーいたします
+                }
+            }
+
+            return suggestedNamespaces.OrderBy(n => n);
+        }
+        public static IEnumerable<string> GetAllSyntaxErrors(string code)
+        {
+            var tree = CSharpSyntaxTree.ParseText(code);
+            var diagnostics = tree.GetDiagnostics();
+
+            // 特定のIDではなく、エラーレベル(Severity)が Error なものを全て抽出いたします
+            var allErrors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error);
+
+            var errorMessages = new List<string>();
+            foreach (var err in allErrors)
+            {
+                int line = err.Location.GetLineSpan().StartLinePosition.Line + 1;
+                // err.Id で CSxxxx などのコードを、err.GetMessage() で本家と同じエラー文面を取得できますわ
+                errorMessages.Add($"{line}行目 [{err.Id}]: {err.GetMessage()}");
+            }
+
+            return errorMessages;
+        }
+    }
+}
+===========================
+SolutionTree.cs
+===========================
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using System.Windows;
+using System.Windows.Controls;
+
+namespace cSharpEditor.function
+{
+    public class SolutionTree
+    {
+        // --- MainWindow.xaml.cs のクラス内に以下を追加いたしますわ ---
+
+        public static void OpenFolder(TreeView solutionTreeView)
+        {
+            // フォルダ選択ダイアログを呼び出します
+            var dialog = new Microsoft.Win32.OpenFolderDialog
+            {
+                Title = "ソリューションやプロジェクトのフォルダを選択してくださいませ"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                string folderPath = dialog.FolderName;
+
+                // 選択されたフォルダを起点にツリーを構築いたします
+                var rootNode = BuildTree(folderPath);
+
+                // 構築した階層データをUIのツリービューに流し込みますわ
+                solutionTreeView.ItemsSource = new System.Collections.ObjectModel.ObservableCollection<TreeItem> { rootNode };
+            }
+        }
+
+        // フォルダの階層を潜りながらデータを組み立てる再帰関数です
+        private static TreeItem BuildTree(string path)
+        {
+            var dirInfo = new DirectoryInfo(path);
+            var item = new TreeItem
+            {
+                Name = dirInfo.Name,
+                FullPath = dirInfo.FullName,
+                IsFile = false
+            };
+
+            // 1. サブディレクトリの探索
+            foreach (var dir in dirInfo.GetDirectories())
+            {
+                // obj、bin、および .git などの隠しフォルダは探索対象から除外いたします
+                if (dir.Name.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
+                    dir.Name.Equals("obj", StringComparison.OrdinalIgnoreCase) ||
+                    dir.Name.StartsWith("."))
+                {
+                    continue;
+                }
+
+                var subNode = BuildTree(dir.FullName);
+
+                // 中身（対象ファイルやさらに下のフォルダ）が存在する場合のみ追加いたしますわ
+                if (subNode.Children.Count > 0)
+                {
+                    item.Children.Add(subNode);
+                }
+            }
+
+            // 2. ファイルの探索と抽出
+            string[] allowedExtensions = { ".cs", ".xaml" };
+            foreach (var file in dirInfo.GetFiles())
+            {
+                if (allowedExtensions.Contains(file.Extension.ToLower()))
+                {
+                    item.Children.Add(new TreeItem
+                    {
+                        Name = file.Name,
+                        FullPath = file.FullName,
+                        IsFile = true
+                    });
+                }
+            }
+
+            return item;
+        }
+    }
+}
+===========================
+TabUtil.cs
+===========================
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using ICSharpCode.AvalonEdit;
+using System.Linq;
+using System.Windows.Input;
+using ICSharpCode.AvalonEdit.CodeCompletion;
+using ICSharpCode.AvalonEdit.Editing;
+
+namespace cSharpEditor.function
+{
+    public class TabUtil
+    {
+        private static CompletionWindow _completionWindow;
+
+        // 新しいタブとエディタを生成する処理
+        public static void AddNewTab(string title,TabControl EditorTabControl)
+        {
+            // エディタコンポーネントの生成と設定
+            var textEditor = new TextEditor
+            {
+                ShowLineNumbers = true, // サクラエディタ風の要である行番号表示
+                FontFamily = new FontFamily("Consolas"), // プログラミング用等幅フォント
+                FontSize = 14,
+                // 初期状態からC#のシンタックスハイライトを適用いたします
+                SyntaxHighlighting = ICSharpCode.AvalonEdit.Highlighting.HighlightingManager.Instance.GetDefinition("C#")
+            };
+
+            textEditor.TextArea.KeyDown += TextArea_KeyDown;
+            textEditor.TextArea.TextEntered += TextArea_TextEntered;
+            textEditor.TextArea.TextEntering += TextArea_TextEntering;
+
+            // タブの生成
+            var tabItem = new TabItem
+            {
+                Header = title,
+                Content = textEditor,
+                Tag = null
+            };
+
+            // 画面のタブコントロールに追加し、表示を切り替える
+            EditorTabControl.Items.Add(tabItem);
+            EditorTabControl.SelectedItem = tabItem;
+        }
+
+        // 指定された内容で新しいタブを開く処理
+        public static void OpenNewFileTab(string title, string content, string filePath,TabControl EditorTabControl)
+        {
+            var textEditor = new TextEditor
+            {
+                ShowLineNumbers = true,
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 14,
+                Text = content // 読み込んだファイルの内容をセットします
+            };
+
+            // 拡張子によってシンタックスハイライトを切り替えますわ
+            string extension = Path.GetExtension(filePath).ToLower();
+            if (extension == ".cs")
+            {
+                textEditor.SyntaxHighlighting = ICSharpCode.AvalonEdit.Highlighting.HighlightingManager.Instance.GetDefinition("C#");
+            }
+            else if (extension == ".xaml" || extension == ".xml")
+            {
+                textEditor.SyntaxHighlighting = ICSharpCode.AvalonEdit.Highlighting.HighlightingManager.Instance.GetDefinition("XML");
+            }
+
+            var tabItem = new TabItem
+            {
+                Header = title,
+                Content = textEditor,
+                Tag = filePath
+            };
+
+            textEditor.TextArea.KeyDown += TextArea_KeyDown;
+            textEditor.TextArea.TextEntering += TextArea_TextEntering;
+            textEditor.TextArea.TextEntered += TextArea_TextEntered;
+            EditorTabControl.Items.Add(tabItem);
+            EditorTabControl.SelectedItem = tabItem;
+        }
+
+        private static void TextArea_TextEntering(object sender, TextCompositionEventArgs e)
+        {
+            if (e.Text.Length > 0 && _completionWindow != null)
+            {
+                if (!char.IsLetterOrDigit(e.Text[0]))
+                {
+                    _completionWindow.CompletionList.RequestInsertion(e);
+                }
+            }
+        }
+
+        // キー入力された直後の処理（「.」や「using 」を検知してRoslynを呼び出します）
+        private static void TextArea_TextEntered(object sender, TextCompositionEventArgs e)
+        {
+            if (sender is not TextArea textArea) return;
+
+            bool shouldTrigger = false;
+            int offset = textArea.Caret.Offset;
+
+            // ① ドットが入力された場合は無条件でトリガーとします
+            if (e.Text == ".")
+            {
+                shouldTrigger = true;
+            }
+            // ② スペースが入力された場合は、直前の単語を確認します
+            else if (e.Text == " ")
+            {
+                if (offset >= 6)
+                {
+                    string prevText = textArea.Document.GetText(offset - 6, 6);
+                    if (prevText == "using ") // 直前が「using 」ならトリガーとしますわ
+                    {
+                        shouldTrigger = true;
+                    }
+                }
+            }
+
+            // トリガー条件を満たした場合のみ、解析とポップアップ表示を行います
+            if (shouldTrigger)
+            {
+                string code = textArea.Document.Text;
+
+                // Roslynの解析処理を呼び出します
+                var completions = RoslynUtil.GetCompletions(code, offset);
+
+                if (completions.Any())
+                {
+                    _completionWindow = new CompletionWindow(textArea);
+                    var data = _completionWindow.CompletionList.CompletionData;
+
+                    foreach (var c in completions)
+                    {
+                        data.Add(new MyCompletionData(c));
+                    }
+
+                    _completionWindow.Show();
+                    _completionWindow.Closed += delegate { _completionWindow = null; };
+                }
+            }
+        }
+        private static void TextArea_KeyDown(object sender, KeyEventArgs e)
+        {
+            // Ctrl + . が押されたかどうかを判定します
+            if (e.Key == Key.OemPeriod && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                if (sender is not TextArea textArea) return;
+
+                int offset = textArea.Caret.Offset;
+                string code = textArea.Document.Text;
+
+                // ステップ2で作った推論エンジンを呼び出します
+                var missingUsings = RoslynUtil.GetMissingUsings(code, offset);
+
+                if (missingUsings.Any())
+                {
+                    _completionWindow = new CompletionWindow(textArea);
+                    var data = _completionWindow.CompletionList.CompletionData;
+
+                    // 見つかった候補（Pathなら複数出ることもありますわ）をリストに登録します
+                    foreach (var ns in missingUsings)
+                    {
+                        data.Add(new UsingCompletionData(ns));
+                    }
+
+                    _completionWindow.Show();
+                    _completionWindow.Closed += delegate { _completionWindow = null; };
+
+                    // ドットがエディタに入力されるのを防ぎます
+                    e.Handled = true;
+                }
+            }
+        }
+    }
+}
+===========================
+UsingCompletionData.cs
+===========================
+using System;
+using System.Windows.Media;
+using ICSharpCode.AvalonEdit.CodeCompletion;
+using ICSharpCode.AvalonEdit.Document;
+using ICSharpCode.AvalonEdit.Editing;
+
+namespace cSharpEditor.function
+{
+    public class UsingCompletionData : ICompletionData
+    {
+        private readonly string _namespaceName;
+
+        public UsingCompletionData(string namespaceName)
+        {
+            _namespaceName = namespaceName;
+        }
+
+        public ImageSource Image => null;
+        public string Text => _namespaceName;
+        public object Content => $"using {_namespaceName}; の追加";
+        public object Description => $"不足しているディレクティブ {_namespaceName} を先頭に追加しますわ";
+        public double Priority => 1;
+
+        // 候補が選択された際の挿入処理です
+        public void Complete(TextArea textArea, ISegment completionSegment, EventArgs insertionRequestEventArgs)
+        {
+            // カーソル位置の単語はそのまま残し、ドキュメントの最上段（0文字目）にusingを書き込みますのよ
+            textArea.Document.Insert(0, $"using {_namespaceName};\r\n");
+        }
+    }
+}
+===========================
+Build.cs
+===========================
+using System;
+using System.Collections.Generic;
+using System.Management.Automation;
+using System.Management.Automation.Runspaces;
+using System.Text;
+using System.Windows.Controls;
+
+namespace cSharpEditor.ioControl
+{
+    public class Build
+    {
+        public static void CLIClear(TextBlock tb)
+        {
+            tb.Text = "";
+        }
+        public static void Create(TextBlock tb, string command="Get-ChildItem -Path D:\\")
+        {
+            using (var _ps = PowerShell.Create())
+            {
+                // コマンドを送信
+                _ps.AddScript(command);
+
+                // 実行し、結果を回収
+                var results = _ps.Invoke();
+
+                StringBuilder sb = new StringBuilder();
+
+                // 正常な出力を文字列として連結
+                foreach (var result in results)
+                {
+                    sb.AppendLine(result.ToString());
+                }
+
+                // エラーが出た場合の処理
+                if (_ps.Streams.Error.Count > 0)
+                {
+                    foreach (var error in _ps.Streams.Error)
+                    {
+                        sb.AppendLine($"[Error] {error.ToString()}");
+                    }
+                }
+
+                // 画面のテキストブロックに追記
+                tb.Text += sb.ToString() + "\n";
+            }
+        }
+    }
+}
+===========================
+ReadFile.cs
+===========================
+using cSharpEditor.function;
+using ICSharpCode.AvalonEdit;
+using Microsoft.Win32;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using System.Windows.Controls;
+
+namespace cSharpEditor.ioControl
+{
+    public class FileControl
+    {
+        public static void OpenCode(TabControl EditorTabControl)
+        {
+            var dialog = new OpenFileDialog
+            {
+                Title = "ファイルを開く",
+                Filter = "C# ファイル (*.cs)|*.cs|XAML ファイル (*.xaml)|*.xaml|すべてのファイル (*.*)|*.*"
+            };
+
+            // ダイアログで「開く」が選択された場合
+            if (dialog.ShowDialog() == true)
+            {
+                string filePath = dialog.FileName;
+                string fileName = Path.GetFileName(filePath);
+                string content = File.ReadAllText(filePath);
+
+                TabUtil.OpenNewFileTab(fileName, content, filePath, EditorTabControl);
+            }
+        }
+        public static void SaveCode(TabControl tabControl, bool isSaveAs = false)
+        {
+            // 現在選択されているタブとエディタを取得します
+            if (tabControl.SelectedItem is not TabItem selectedTab ||
+                selectedTab.Content is not TextEditor textEditor)
+            {
+                return;
+            }
+
+            string currentPath = selectedTab.Tag as string;
+
+            // 「名前を付けて保存」または「まだ一度も保存されていない新規ファイル」の場合
+            if (isSaveAs || string.IsNullOrEmpty(currentPath))
+            {
+                var dialog = new SaveFileDialog
+                {
+                    Title = "保存",
+                    Filter = "C# ファイル (*.cs)|*.cs|XAML ファイル (*.xaml)|*.xaml|すべてのファイル (*.*)|*.*",
+                    FileName = selectedTab.Header.ToString()
+                };
+
+                if (dialog.ShowDialog() == true)
+                {
+                    currentPath = dialog.FileName;
+                }
+                else
+                {
+                    return; // キャンセルされた場合は中断しますわ
+                }
+            }
+
+            // ディスクへファイル内容を書き込みます
+            File.WriteAllText(currentPath, textEditor.Text);
+
+            // タブの表示名と記憶しているパスを最新状態に更新しますわ
+            selectedTab.Tag = currentPath;
+            selectedTab.Header = Path.GetFileName(currentPath);
+
+            // 新規保存時のために、拡張子に応じたハイライト設定を再適用します
+            string extension = Path.GetExtension(currentPath).ToLower();
+            if (extension == ".cs")
+            {
+                textEditor.SyntaxHighlighting = ICSharpCode.AvalonEdit.Highlighting.HighlightingManager.Instance.GetDefinition("C#");
+            }
+            else if (extension == ".xaml" || extension == ".xml")
+            {
+                textEditor.SyntaxHighlighting = ICSharpCode.AvalonEdit.Highlighting.HighlightingManager.Instance.GetDefinition("XML");
+            }
+
+            textEditor.IsModified = false;
+        }
+    }
+}
+===========================
+Projects.xaml
+===========================
+<UserControl x:Class="cSharpEditor.Projects.Create"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:cSharpEditor.Projects"
+             mc:Ignorable="d" 
+             d:DesignHeight="450" d:DesignWidth="800">
+    <Grid>
+        <StackPanel Orientation="Horizontal" Margin="5">
+            <TextBlock Text="ソリューション:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+            <ComboBox x:Name="SolutionComboBox" Width="150" SelectionChanged="SolutionComboBox_SelectionChanged"/>
+
+            <TextBlock Text="プロジェクト:" VerticalAlignment="Center" Margin="15,0,5,0"/>
+            <ComboBox x:Name="ProjectComboBox" Width="150"/>
+        </StackPanel>
+    </Grid>
+</UserControl>
+===========================
+Projects.xaml.cs
+===========================
+using cSharpEditor.Solution;
+using System;
+using System.Collections.Generic;
+using System.Text;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Navigation;
+using System.Windows.Shapes;
+
+namespace cSharpEditor.Projects
+{
+    /// <summary>
+    /// Projects.xaml の相互作用ロジック
+    /// </summary>
+    public partial class Create : UserControl
+    {
+        public Create()
+        {
+            InitializeComponent();
+        }
+        // クラスのメンバ変数として、読み込んだJSONデータを保持しておきますわ
+        private Dictionary<string, SolutionData> _solutionDict;
+
+        // 画面のロード時（Window_Loadedなど）に呼び出してくださいませ
+        public void InitializeDropDowns()
+        {
+            // JSONから全データを読み込みます
+            _solutionDict = SolutionManager.GetAllData();
+
+            // ソリューション名（Dictionaryのキー一覧）を1つ目のプルダウンにセットします
+            SolutionComboBox.ItemsSource = _solutionDict.Keys;
+        }
+
+        // 1つ目のプルダウン（ソリューション）が変更された際の処理です
+        private void SolutionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (SolutionComboBox.SelectedItem is string selectedSolution)
+            {
+                // 選択されたソリューション名が存在するか確認します
+                if (_solutionDict.TryGetValue(selectedSolution, out var solutionData))
+                {
+                    // そのソリューションに紐づくプロジェクト名（Projectsのキー一覧）を2つ目にセットします
+                    ProjectComboBox.ItemsSource = solutionData.Projects.Keys;
+
+                    // 中身が切り替わったので、2つ目の選択状態をリセットして空にしておきますわ
+                    ProjectComboBox.SelectedIndex = -1;
+                }
+            }
+        }
+    }
+}
+===========================
+Solution.xaml
+===========================
+<UserControl x:Class="cSharpEditor.Solution.Create"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:cSharpEditor.Solution"
+             mc:Ignorable="d" 
+             d:DesignHeight="200" d:DesignWidth="600">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="10">
+            <TextBlock x:Name="CreateObjectBlock" Text="作成するオブジェクト" VerticalAlignment="Center" Margin="0,0,5,0" Foreground="Black" />
+        </StackPanel>
+        <StackPanel Grid.Row="1"  Orientation="Horizontal" Margin="10">
+            <TextBlock x:Name="CreateObjectBox" Text="作成オブジェクト名:" VerticalAlignment="Center" Margin="0,0,5,0" Foreground="Black" />
+            <TextBox x:Name="CreateObjectText" Width="200" Margin="0,0,5,0"/>
+        </StackPanel>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="10">
+            <TextBlock Text="作成フォルダ:" VerticalAlignment="Center" Margin="0,0,5,0" Foreground="Black" />
+            <TextBox x:Name="SavePathBox" Width="400" Margin="0,0,5,0"/>
+            <Button Content="参照" Width="80" Click="BrowseButton_Click"/>
+        </StackPanel>
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="10">
+            <Button Content="作成" Width="80" Margin="5" Click="CreateButton_Click"/>
+            <Button Content="キャンセル" Width="80" Margin="5" Click="CancelButton_Click"/>
+        </StackPanel>
+    </Grid>
+</UserControl>
+===========================
+Solution.xaml.cs
+===========================
+using cSharpEditor.function;
+using cSharpEditor.ioControl;
+using Microsoft.Win32;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Navigation;
+
+namespace cSharpEditor.Solution
+{
+
+
+    /// <summary>
+    /// Create.xaml の相互作用ロジック
+    /// </summary>
+    public partial class Create : UserControl
+    {
+        private TextBlock _result;
+        public Create(TextBlock result)
+        {
+            InitializeComponent();
+            _result = result;
+        }
+
+        public void CreateSolution()
+        {
+            CreateObjectBlock.Text = "ソリューション作成ウインドウ";
+            CreateObjectBox.Text = "作成ソリューション名：";
+        }
+        public void CreateButton_Click(object sender, RoutedEventArgs e)
+        {
+            string fullPath = SavePathBox.Text;
+            string solutionName = CreateObjectText.Text;
+
+            if (string.IsNullOrWhiteSpace(CreateObjectBox.Text) || string.IsNullOrWhiteSpace(SavePathBox.Text))
+            {
+                MessageBox.Show("ソリューション名と保存先を入力してください。", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+            if (!Directory.Exists(fullPath)) Directory.CreateDirectory(fullPath);
+            string solutionPath = Path.Combine(fullPath, solutionName);
+            if (!Directory.Exists(solutionPath)) Directory.CreateDirectory(solutionPath);
+
+            StreamWriter sw = new StreamWriter("solutionList", false, Encoding.UTF8);
+
+
+            string command = $"dotnet new sln -o {solutionPath}";
+
+            Build.CLIClear(_result);
+            Build.Create(_result, command);
+
+            Window.GetWindow(this).Close();
+        }
+        public void CancelButton_Click(object sender, RoutedEventArgs e)
+        {
+            // ウインドウを閉じる
+            Window.GetWindow(this).Close();
+
+        }
+        public void BrowseButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFolderDialog
+            {
+                Title = "フォルダを開く"
+            };
+
+            // ダイアログで「開く」が選択された場合
+            if (dialog.ShowDialog() == true)
+            {
+                SavePathBox.Text = dialog.FolderName;
+
+            }
+        }
+    }
+}
+===========================
+SolutionList.cs
+===========================
+using System;
+using System.IO;
+using System.Collections.Generic;
+using System.Text;
+using System.Text.Json;
+
+namespace cSharpEditor.Solution
+{
+    // --- 1. JSONの構造を表現するデータクラスですわ ---
+    public class SolutionData
+    {
+        public string FullPath { get; set; }
+
+        // プロジェクト名をキー、パスを値として子要素に保持します
+        public Dictionary<string, string> Projects { get; set; } = new Dictionary<string, string>();
+    }
+
+    // --- 2. 記録・更新を担う管理クラスですわ ---
+    public class SolutionManager
+    {
+        private static readonly string JsonFilePath = "solutionList.json";
+
+        // 内部で使用する読み込み用の共通メソッドです
+        private static Dictionary<string, SolutionData> LoadJson()
+        {
+            if (!File.Exists(JsonFilePath)) return new Dictionary<string, SolutionData>();
+            string json = File.ReadAllText(JsonFilePath);
+            if (string.IsNullOrWhiteSpace(json)) return new Dictionary<string, SolutionData>();
+
+            return JsonSerializer.Deserialize<Dictionary<string, SolutionData>>(json) ?? new Dictionary<string, SolutionData>();
+        }
+
+        // 内部で使用する保存用の共通メソッドです
+        private static void SaveJson(Dictionary<string, SolutionData> data)
+        {
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            string json = JsonSerializer.Serialize(data, options);
+            File.WriteAllText(JsonFilePath, json);
+        }
+
+        // 【呼び出し用】ソリューションを作成した際に実行してくださいませ
+        public static void AddSolution(string solutionName, string solutionPath)
+        {
+            var data = LoadJson();
+            if (!data.ContainsKey(solutionName))
+            {
+                data[solutionName] = new SolutionData { FullPath = solutionPath };
+                SaveJson(data);
+            }
+        }
+
+        // 【呼び出し用】プロジェクトを作成した際に実行してくださいませ
+        public static void AddProject(string targetSolutionName, string projectName, string projectPath)
+        {
+            var data = LoadJson();
+            if (data.ContainsKey(targetSolutionName))
+            {
+                data[targetSolutionName].Projects[projectName] = projectPath;
+                SaveJson(data);
+            }
+            else
+            {
+                System.Windows.MessageBox.Show("指定されたソリューションが存在しませんわ。");
+            }
+        }
+        public static Dictionary<string, SolutionData> GetAllData()
+        {
+            return LoadJson();
+        }
+
+    }
+}
+===========================
+プロジェクト名: getCshCode 
+App.xaml
+===========================
+<Application x:Class="getCshCode.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:getCshCode"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+         
+    </Application.Resources>
+</Application>
+===========================
+App.xaml.cs
+===========================
+using System.Configuration;
+using System.Data;
+using System.Windows;
+
+namespace getCshCode
+{
+    /// <summary>
+    /// Interaction logic for App.xaml
+    /// </summary>
+    public partial class App : Application
+    {
+    }
+
+}
+===========================
+AssemblyInfo.cs
+===========================
+using System.Windows;
+
+[assembly: ThemeInfo(
+    ResourceDictionaryLocation.None,            //where theme specific resource dictionaries are located
+                                                //(used if a resource is not found in the page,
+                                                // or application resource dictionaries)
+    ResourceDictionaryLocation.SourceAssembly   //where the generic resource dictionary is located
+                                                //(used if a resource is not found in the page,
+                                                // app, or any theme specific resource dictionaries)
+)]
+===========================
+MainWindow.xaml
+===========================
+<Window x:Class="getCshCode.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:getCshCode"
+        mc:Ignorable="d"
+        Title="MainWindow" Height="185" Width="500">
+    <Grid Margin="0,0,0,9">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="40"/>
+            <RowDefinition Height="40"/>
+            <RowDefinition Height="10" />
+            <RowDefinition Height="50"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="4" Text="ソリューションファイルを選択してください" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
+        <TextBox x:Name="solutionPath" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4" Margin="10" IsReadOnly="True" />
+        <Button Grid.Row="1" Grid.Column="4" Content="参照" Margin="10" Click="BrowseButton_Click"/>
+        <Button Grid.Row="3" Grid.Column="1" Content="OK" Margin="10" Click="OKButton_Click"/>
+        <Button Grid.Row="3" Grid.Column="3" Content="キャンセル" Margin="10" Click="CancelButton_Click"/>
+    </Grid>
+</Window>
+===========================
+MainWindow.xaml.cs
+===========================
+using System.Text;
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Navigation;
+using Microsoft.Win32;
+using getCshCode.Utility;
+using System.Net.Http.Headers;
+
+namespace getCshCode
+{
+    /// <summary>
+    /// Interaction logic for MainWindow.xaml
+    /// </summary>
+    public partial class MainWindow : Window
+    {
+        public MainWindow()
+        {
+            InitializeComponent();
+        }
+
+        private void BrowseButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFileDialog
+            {
+                Filter = "ソリューションファイル (*.slnx)|*.slnx|All Files (*.*)|*.*"
+            };
+            if (dialog.ShowDialog() == true) solutionPath.Text = dialog.FileName;
+        }
+
+        private void OKButton_Click(object sender, RoutedEventArgs e)
+        {
+            var path = solutionPath.Text;
+            string code = string.Empty;
+            string[] extension = { ".cs", ".xaml" };
+            string[] strings = { "obj", "bin" };
+
+            if (string.IsNullOrEmpty(path))
+            {
+                MessageBox.Show("ソリューションファイルを選択してください。", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+            string solution = Directory.GetParent(path).FullName;
+            string solutionName = Path.GetFileNameWithoutExtension(path);
+            string outputPath = Path.Combine(solution, "code.txt");
+            if (Path.Exists(outputPath)) File.Delete(outputPath);
+            using var writer = new StreamWriter(Path.Combine(solution,"code.txt"), false, Encoding.UTF8);
+            writer.WriteLine($"ソリューション名: {solutionName}");
+            try
+            {
+                foreach (var line in File.ReadLines(path))
+                {
+                    if (line.Contains("Project"))
+                    {
+                        string projectName = ioControl.GetSpan(line, '"', 1).Split('/')[0];
+                        writer.WriteLine($"プロジェクト名: {projectName} ");
+                        string project = Path.Combine(solution, projectName);
+                        foreach (string module in Directory.GetFiles(project))
+                        {
+                            if (extension.Any(ext => module.EndsWith(ext)))
+                            {
+                                writer.WriteLine(Path.GetFileName(module));
+                                writer.WriteLine("===========================");
+                                foreach (var line2 in File.ReadLines(module))
+                                {
+                                    writer.WriteLine(line2);
+                                }
+                                writer.WriteLine("===========================");
+                            }
+                        }
+                        foreach(string ProjectFolder in Directory.GetDirectories(project))
+                        {
+                            if (strings.Any(f => Path.GetDirectoryName(ProjectFolder) == f)) continue;
+                            foreach (string module in Directory.GetFiles(ProjectFolder))
+                            {
+                                if(extension.Any(ext => module.EndsWith(ext)))
+                                {
+                                    writer.WriteLine(Path.GetFileName(module));
+                                    writer.WriteLine("===========================");
+                                    foreach (var line2 in File.ReadLines(module))
+                                    {
+                                        writer.WriteLine(line2);
+                                    }
+                                    writer.WriteLine("===========================") ;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            catch (Exception ex)
+            {
+                MessageBox.Show($"エラーが発生しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            this.Close();
+        }
+        private void CancelButton_Click(object sender, RoutedEventArgs e)
+        {
+            // 何もせずにウィンドウを閉じる
+            this.Close();
+        }
+    }
+}
+===========================
+ioControl.cs
+===========================
+using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace getCshCode.Utility
+{
+    public class ioControl
+    {
+        public static string GetSpan(string line, char span, int spanCnt)
+        {
+            var spanLine = line.AsSpan();
+            for (int i = 0; i < spanLine.Length; i++)
+            {
+                if (spanLine[i] == span)
+                {
+                    int start = i + 1;
+                    int end = spanLine.Slice(start).IndexOf(span) + start;
+                    if (end > start)
+                    {
+                        if (--spanCnt == 0) return spanLine.Slice(start, end - start).ToString();
+                    }
+                }
+            }
+            return spanLine.ToString();
+
+        }
+    }
+}
+===========================
+プロジェクト名: PowerTerminal 
+App.xaml
+===========================
+<Application x:Class="PowerTerminal.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:PowerTerminal"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+         
+    </Application.Resources>
+</Application>
+===========================
+App.xaml.cs
+===========================
+using System.Configuration;
+using System.Data;
+using System.Windows;
+
+namespace PowerTerminal
+{
+    /// <summary>
+    /// Interaction logic for App.xaml
+    /// </summary>
+    public partial class App : Application
+    {
+    }
+
+}
+===========================
+AssemblyInfo.cs
+===========================
+using System.Windows;
+
+[assembly: ThemeInfo(
+    ResourceDictionaryLocation.None,            //where theme specific resource dictionaries are located
+                                                //(used if a resource is not found in the page,
+                                                // or application resource dictionaries)
+    ResourceDictionaryLocation.SourceAssembly   //where the generic resource dictionary is located
+                                                //(used if a resource is not found in the page,
+                                                // app, or any theme specific resource dictionaries)
+)]
+===========================
+MainWindow.xaml
+===========================
+<Window x:Class="PowerTerminal.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="PowerShell Commander" Height="450" Width="800">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0" Margin="0,0,0,10" Background="#1E1E1E">
+            <TextBlock Name="OutputTextBlock" Foreground="LightGray" FontFamily="Consolas" Padding="5" TextWrapping="Wrap" />
+        </ScrollViewer>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBox Name="InputTextBox" Grid.Column="0" Margin="0,0,10,0" Padding="5" FontFamily="Consolas" FontSize="14" 
+             TextChanged="InputTextBox_TextChanged" 
+             PreviewKeyDown="InputTextBox_PreviewKeyDown" />
+            <Popup Name="CompletionPopup" PlacementTarget="{Binding ElementName=InputTextBox}" Placement="Bottom" StaysOpen="False">
+                <ListBox Name="CompletionListBox" MaxHeight="150" FontFamily="Consolas" FontSize="14"
+                 PreviewKeyDown="CompletionListBox_PreviewKeyDown"
+                 MouseDoubleClick="CompletionListBox_MouseDoubleClick"/>
+            </Popup>
+            <Button Name="ExecuteButton" Grid.Column="1" Content="実行" Width="80" Click="ExecuteButton_Click" />
+        </Grid>
+    </Grid>
+</Window>
+===========================
+MainWindow.xaml.cs
+===========================
+using PowerTerminal.Command;
+using System;
+using System.Management.Automation;
+using System.Text;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+
+namespace PowerTerminal
+{
+    public partial class MainWindow : Window
+    {
+        private Insert _insert;
+        private Intorsions _intorsions;
+
+        private PowerShell _ps;
+        public static int _replacementIndex;
+        public static int _replacementLength;
+        public static bool _isInserting = false;
+        public MainWindow()
+        {
+            InitializeComponent();
+            _ps = PowerShell.Create();
+            _insert = new Insert(this,_ps);
+            _intorsions = new Intorsions(_ps);
+        }
+
+        // 実行ボタンが押された時の処理
+        private void ExecuteButton_Click(object sender, RoutedEventArgs e)
+        {
+            Intorsions.DispatchCommand(this,_ps);
+        }
+
+        // テキストボックスでEnterキーが押された時の処理（利便性のため）
+        private void InputTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                Intorsions.DispatchCommand(this,_ps);
+            }
+        }
+
+        private void InputTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            _insert.TextChanged();
+        }
+
+        // 入力欄でのキー操作（ポップアップ表示時の上下キー移動やTab/Enterでの決定）
+        private void InputTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            _insert.PreviewKeyDown(sender, e);
+        }
+
+        // リストボックス側でのキー操作
+        private void CompletionListBox_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter || e.Key == Key.Tab)
+            {
+                _insert.InsertCompletion();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Escape)
+            {
+                CompletionPopup.IsOpen = false;
+                InputTextBox.Focus();
+                e.Handled = true;
+            }
+        }
+
+        // リストボックスのダブルクリック操作
+        private void CompletionListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            _insert.InsertCompletion();
+        }
+    }
+}
+===========================
+Insert.cs
+===========================
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Management.Automation;
+using System.Text;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using PowerTerminal;
+
+namespace PowerTerminal.Command
+{
+    public class Insert
+    {
+        MainWindow _window;
+        PowerShell _ps;
+        Popup CompletionPopup;
+        TextBlock OutputTextBlock;
+        TextBox InputTextBox;
+        ListBox CompletionListBox;
+
+
+        public Insert(MainWindow window, PowerShell ps)
+        {
+            _window = window;
+            CompletionPopup = _window.CompletionPopup;
+            OutputTextBlock = _window.OutputTextBlock;
+            InputTextBox = _window.InputTextBox;
+            CompletionListBox = _window.CompletionListBox;
+
+            _ps = ps;
+        }
+
+        public void Initialize()
+        {
+            _ps.AddScript("function Set-Connect {}");
+            _ps.AddScript("function Set-Reserve {}");
+        }
+
+        public void TextChanged()
+        {
+            if (MainWindow._isInserting) return; // 補完文字の挿入中は何もしない
+
+            if (string.IsNullOrWhiteSpace(InputTextBox.Text))
+            {
+                CompletionPopup.IsOpen = false;
+                return;
+            }
+
+            // PowerShell SDKから現在の入力に対する補完候補を取得
+            CommandCompletion completion = CommandCompletion.CompleteInput(
+                InputTextBox.Text,
+                InputTextBox.CaretIndex,
+                null,
+                _ps // クラス直下でインスタンス化して維持しているPowerShellオブジェクト
+            );
+
+            if (completion.CompletionMatches.Count > 0)
+            {
+                // 置換すべき文字の位置と長さを記憶
+                MainWindow._replacementIndex = completion.ReplacementIndex;
+                MainWindow._replacementLength = completion.ReplacementLength;
+
+                CompletionListBox.Items.Clear();
+                foreach (var match in completion.CompletionMatches)
+                {
+                    CompletionListBox.Items.Add(match.CompletionText);
+                }
+
+                CompletionListBox.SelectedIndex = 0;
+                CompletionPopup.IsOpen = true;
+            }
+            else
+            {
+                CompletionPopup.IsOpen = false;
+            }
+        }
+
+        public void PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (CompletionPopup.IsOpen)
+            {
+                if (e.Key == Key.Down)
+                {
+                    CompletionListBox.Focus();
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Escape)
+                {
+                    CompletionPopup.IsOpen = false;
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Tab || e.Key == Key.Enter)
+                {
+                    InsertCompletion();
+                    e.Handled = true;
+                }
+            }
+            else if (e.Key == Key.Enter)
+            {
+                // ポップアップが閉じていれば通常のコマンド実行処理へ
+                Intorsions.DispatchCommand(_window,_ps);
+                e.Handled = true;
+            }
+        }
+
+        // 選択した補完文字列を入力欄に適用する処理
+        public void InsertCompletion()
+        {
+            if (CompletionListBox.SelectedItem != null)
+            {
+                MainWindow._isInserting = true;
+
+                string selectedText = CompletionListBox.SelectedItem.ToString();
+                string originalText = InputTextBox.Text;
+
+                // 入力途中の文字を選択した補完候補の文字列に置き換える
+                InputTextBox.Text = originalText.Remove(MainWindow._replacementIndex, MainWindow._replacementLength)
+                                                .Insert(MainWindow._replacementIndex, selectedText);
+
+                InputTextBox.CaretIndex = MainWindow._replacementIndex + selectedText.Length;
+
+                CompletionPopup.IsOpen = false;
+                InputTextBox.Focus();
+
+                MainWindow._isInserting = false;
+            }
+        }
+    }
+}
+===========================
+NewFunctions.cs
+===========================
+using System;
+using System.Collections.Generic;
+using System.Management.Automation;
+using System.Text;
+using System.Windows;
+using System.Windows.Controls;
+
+namespace PowerTerminal.Command
+{
+    public class Intorsions
+    {
+        public Intorsions(PowerShell ps)
+        {
+            ps.AddScript("function Set-Connect {param([string]$Name,[string]$Command)}");
+            ps.AddScript("function Set-Reserve {param([string]$Server,[string]$Account,[string]$Key)}");
+            ps.Invoke();
+            ps.Commands.Clear();
+        }
+
+        public static void DispatchCommand(MainWindow _window, PowerShell _ps)
+        {
+            var inputTextBox = _window.InputTextBox;
+            var OutputTextBlock = _window.OutputTextBlock;
+
+            string command = inputTextBox.Text;
+            string coreCommand = Utilities.GetCoreCommand(command).ToLower();
+
+            OutputTextBlock.Text += $"> {command}\n";
+            inputTextBox.Clear();
+
+            if (string.IsNullOrWhiteSpace(coreCommand)) return;
+
+
+            // コマンドの内容に応じて適切な処理を呼び出す
+            var msg = coreCommand switch
+            {
+                "set-reserve" => "ssh接続定義を登録します\n",
+                "set-connection" => "ssh接続をおこないます\n",
+                _ => null
+            };
+
+            if (string.IsNullOrWhiteSpace(msg))
+            {
+                // その他のコマンドの処理
+                NewFunctions.RunCommand(command, OutputTextBlock, _ps);
+            }
+            else
+            {
+                OutputTextBlock.Text += msg;
+            }
+        }
+    }
+    public class NewFunctions
+    {
+        public static void RunCommand(string command, TextBlock OutputTextBlock, PowerShell _ps)
+        {
+            try
+            {
+                // コマンドを送信
+                _ps.AddScript(command);
+
+                // 実行し、結果を回収
+                var results = _ps.Invoke();
+
+                StringBuilder sb = new StringBuilder();
+
+                // 正常な出力を文字列として連結
+                foreach (var result in results)
+                {
+                    sb.AppendLine(result.ToString());
+                }
+
+                // エラーが出た場合の処理
+                if (_ps.Streams.Error.Count > 0)
+                {
+                    foreach (var error in _ps.Streams.Error)
+                    {
+                        sb.AppendLine($"[Error] {error.ToString()}");
+                    }
+                }
+
+                // 画面のテキストブロックに追記
+                OutputTextBlock.Text += sb.ToString() + "\n";
+            }
+            catch (Exception ex)
+            {
+                // C#側の例外エラー処理
+                OutputTextBlock.Text += $"[Exception] {ex.Message}\n\n";
+            }
+        }
+        public static void GunZip()
+        {
+
+        }
+    }
+
+    public class Utilities
+    {
+        public static string GetCoreCommand(string command)
+        {
+            ReadOnlySpan<char> span = command.AsSpan().Trim();
+            for(int i = 0; i < span.Length; i++)
+            {
+                if (span[i] == ' ')
+                {
+                    return span.Slice(0, i).ToString();
+                }
+            }
+            return command;
+        }
+    }
+}
+===========================
